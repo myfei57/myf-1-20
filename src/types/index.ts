@@ -80,11 +80,27 @@ export interface RepairRecord {
   repairedAt: number;
 }
 
+export interface PlanVersion {
+  id: string;
+  versionNumber: number;
+  parts: Record<PartType, Part | null>;
+  totalWeight: number;
+  totalEnergy: number;
+  totalSkillSlots: number;
+  maxDurability: number;
+  savedAt: number;
+}
+
 export interface AssemblyPlan {
   id: string;
   name: string;
   parts: Record<PartType, Part | null>;
   savedAt: number;
+  versions: PlanVersion[];
+  totalWeight: number;
+  totalEnergy: number;
+  totalSkillSlots: number;
+  maxDurability: number;
 }
 
 export interface RarityConfig {
@@ -161,8 +177,11 @@ export interface GameActions {
   spendMaterials: (amount: number) => boolean;
   addMissionRecord: (record: MissionRecord) => void;
   addRepairRecord: (record: RepairRecord) => void;
-  addAssemblyPlan: (plan: AssemblyPlan) => void;
+  addAssemblyPlan: (plan: Omit<AssemblyPlan, 'versions' | 'totalWeight' | 'totalEnergy' | 'totalSkillSlots' | 'maxDurability'>) => void;
+  updateAssemblyPlan: (planId: string, parts: Record<PartType, Part | null>) => void;
   removeAssemblyPlan: (planId: string) => void;
+  rollbackToVersion: (planId: string, versionId: string) => void;
+  loadAssemblyPlan: (planId: string) => void;
   updateConfig: (config: Partial<GameConfig>) => void;
   resetConfig: () => void;
   setSelectedPart: (slot: PartType, part: Part | null) => void;

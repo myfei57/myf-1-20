@@ -10,12 +10,14 @@ import {
   AlertTriangle,
   Sparkles,
   X,
+  Clock,
 } from 'lucide-react';
 import { useGameStore } from '../store/useGameStore';
 import { PageContainer } from '../components/PageContainer';
 import { PartCard } from '../components/PartCard';
 import { StatBar } from '../components/StatBar';
 import { Modal } from '../components/Modal';
+import { AssemblyPlanCard } from '../components/AssemblyPlanCard';
 import type { PartType, AssemblyPlan } from '../types';
 import { PART_TYPE_NAMES } from '../data/defaultConfig';
 
@@ -38,30 +40,39 @@ export function ComparePage() {
 
   const getPlanDetails = (plan: AssemblyPlan) => {
     const planParts = plan.parts;
-    let totalWeight = 0;
-    let totalEnergy = 0;
-    let totalSkillSlots = 0;
-    let maxDurability = 0;
-    const activeSetBonuses: string[] = [];
-
     const partTypes: PartType[] = ['head', 'body', 'arm', 'leg', 'core', 'tool'];
 
-    partTypes.forEach((type) => {
-      const part = planParts[type];
-      if (part) {
-        totalWeight += part.weight;
-        totalEnergy += part.energy;
-        totalSkillSlots += part.skillSlots;
-        maxDurability += part.maxDurability;
-      }
-    });
+    const hasCachedStats =
+      plan.totalWeight !== undefined &&
+      plan.totalEnergy !== undefined &&
+      plan.totalSkillSlots !== undefined &&
+      plan.maxDurability !== undefined;
+
+    let totalWeight = plan.totalWeight ?? 0;
+    let totalEnergy = plan.totalEnergy ?? 0;
+    let totalSkillSlots = plan.totalSkillSlots ?? 0;
+    let maxDurability = plan.maxDurability ?? 0;
+
+    if (!hasCachedStats) {
+      partTypes.forEach((type) => {
+        const part = planParts[type];
+        if (part) {
+          totalWeight += part.weight;
+          totalEnergy += part.energy;
+          totalSkillSlots += part.skillSlots;
+          maxDurability += part.maxDurability;
+        }
+      });
+    }
 
     const setCounts: Record<string, number> = {};
+    const activeSetBonuses: string[] = [];
     partTypes.forEach((type) => {
       const part = planParts[type];
       if (part?.setBonus) {
         setCounts[part.setBonus] = (setCounts[part.setBonus] || 0) + 1;
-        if (setCounts[part.setBonus] >= 3) {
+        const setConfig = config.setBonuses[part.setBonus];
+        if (setConfig && setCounts[part.setBonus] >= setConfig.requiredParts) {
           if (!activeSetBonuses.includes(part.setBonus)) {
             activeSetBonuses.push(part.setBonus);
           }
@@ -82,12 +93,16 @@ export function ComparePage() {
         if (!otherPart) return;
 
         if (!part.compatibility.includes(otherType)) {
-          compatibilityIssues.push(`${part.name} 与 ${otherPart.name} 不兼容`);
+          const issue = `${part.name} 与 ${otherPart.name} 不兼容`;
+          if (!compatibilityIssues.includes(issue)) {
+            compatibilityIssues.push(issue);
+          }
         }
       });
     });
 
     const installedCount = Object.values(planParts).filter(Boolean).length;
+    const versionCount = plan.versions?.length || 1;
 
     return {
       parts: planParts,
@@ -99,6 +114,7 @@ export function ComparePage() {
       compatibilityIssues,
       activeSetBonuses,
       installedCount,
+      versionCount,
     };
   };
 
@@ -162,27 +178,33 @@ export function ComparePage() {
                     onClick={() => togglePlanSelection(plan.id)}
                   >
                     <div className="flex items-start justify-between mb-2">
-                      <div>
-                        <h3 className="font-display font-bold text-white">
-                          {plan.name}
-                        </h3>
-                        <p className="text-xs text-white/40">
-                          {details.installedCount}/6 零件 |{' '}
-                          {new Date(plan.savedAt).toLocaleDateString('zh-CN')}
-                        </p>
+                        <div className="flex-1 min-w-0">
+                          <h3 className="font-display font-bold text-white truncate">
+                            {plan.name}
+                          </h3>
+                          <p className="text-xs text-white/40 flex items-center gap-1">
+                            <Clock className="w-3 h-3" />
+                            {details.installedCount}/6 零件 |{' '}
+                            {new Date(plan.savedAt).toLocaleDateString('zh-CN')}
+                          </p>
+                          {details.versionCount > 1 && (
+                            <p className="text-xs text-neon-purple/70 mt-0.5">
+                              {details.versionCount} 个版本
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPlanToDelete(plan.id);
+                          }}
+                          className="p-1.5 rounded-lg bg-neon-red/10 text-neon-red hover:bg-neon-red/20 transition-colors flex-shrink-0 ml-2"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setPlanToDelete(plan.id);
-                        }}
-                        className="p-1.5 rounded-lg bg-neon-red/10 text-neon-red hover:bg-neon-red/20 transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
 
-                    <div className="grid grid-cols-3 gap-2 text-xs font-mono mb-3">
+                      <div className="grid grid-cols-3 gap-2 text-xs font-mono mb-3">
                       <div className="flex items-center gap-1">
                         <Scale className="w-3 h-3 text-neon-blue" />
                         <span className="text-white/70">{details.totalWeight}</span>

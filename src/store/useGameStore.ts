@@ -25,6 +25,7 @@ import {
   calculateAdaptability as calcAdapt,
   clamp,
 } from '../utils/helpers';
+import type { PlanVersion } from '../types';
 
 const EMPTY_SELECTED_PARTS: Record<PartType, Part | null> = {
   head: null,
@@ -106,13 +107,96 @@ export const useGameStore = create<Store>()(
       addRepairRecord: (record) =>
         set((state) => ({ repairRecords: [...state.repairRecords, record] })),
 
-      addAssemblyPlan: (plan) =>
-        set((state) => ({ assemblyPlans: [...state.assemblyPlans, plan] })),
+      addAssemblyPlan: (plan) => {
+        const state = get();
+        const stats = calcStats(plan.parts, state.config);
+
+        const firstVersion: PlanVersion = {
+          id: generateId(),
+          versionNumber: 1,
+          parts: { ...plan.parts },
+          totalWeight: stats.totalWeight,
+          totalEnergy: stats.totalEnergy,
+          totalSkillSlots: stats.totalSkillSlots,
+          maxDurability: stats.maxDurability,
+          savedAt: plan.savedAt,
+        };
+
+        const fullPlan: AssemblyPlan = {
+          ...plan,
+          versions: [firstVersion],
+          totalWeight: stats.totalWeight,
+          totalEnergy: stats.totalEnergy,
+          totalSkillSlots: stats.totalSkillSlots,
+          maxDurability: stats.maxDurability,
+        };
+
+        set((state) => ({ assemblyPlans: [...state.assemblyPlans, fullPlan] }));
+      },
+
+      updateAssemblyPlan: (planId, parts) => {
+        const state = get();
+        const planIndex = state.assemblyPlans.findIndex((p) => p.id === planId);
+        if (planIndex === -1) return;
+
+        const plan = state.assemblyPlans[planIndex];
+        const stats = calcStats(parts, state.config);
+        const now = Date.now();
+
+        const newVersion: PlanVersion = {
+          id: generateId(),
+          versionNumber: plan.versions.length + 1,
+          parts: { ...parts },
+          totalWeight: stats.totalWeight,
+          totalEnergy: stats.totalEnergy,
+          totalSkillSlots: stats.totalSkillSlots,
+          maxDurability: stats.maxDurability,
+          savedAt: now,
+        };
+
+        const updatedPlans = [...state.assemblyPlans];
+        updatedPlans[planIndex] = {
+          ...plan,
+          parts: { ...parts },
+          savedAt: now,
+          versions: [...plan.versions, newVersion],
+          totalWeight: stats.totalWeight,
+          totalEnergy: stats.totalEnergy,
+          totalSkillSlots: stats.totalSkillSlots,
+          maxDurability: stats.maxDurability,
+        };
+
+        set({ assemblyPlans: updatedPlans });
+      },
 
       removeAssemblyPlan: (planId) =>
         set((state) => ({
           assemblyPlans: state.assemblyPlans.filter((p) => p.id !== planId),
         })),
+
+      rollbackToVersion: (planId, versionId) => {
+        const state = get();
+        const planIndex = state.assemblyPlans.findIndex((p) => p.id === planId);
+        if (planIndex === -1) return;
+
+        const plan = state.assemblyPlans[planIndex];
+        const version = plan.versions.find((v) => v.id === versionId);
+        if (!version) return;
+
+        set({
+          selectedParts: { ...version.parts },
+        });
+      },
+
+      loadAssemblyPlan: (planId) => {
+        const state = get();
+        const plan = state.assemblyPlans.find((p) => p.id === planId);
+        if (!plan) return;
+
+        set({
+          selectedParts: { ...plan.parts },
+        });
+      },
 
       updateConfig: (newConfig) =>
         set((state) => ({

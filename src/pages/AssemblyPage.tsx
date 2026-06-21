@@ -25,6 +25,9 @@ import {
   Bot,
   Sparkles,
   X,
+  FileText,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { PageContainer } from '../components/PageContainer';
 import { PartSlot } from '../components/PartSlot';
@@ -32,10 +35,11 @@ import { DraggablePart } from '../components/DraggablePart';
 import { PartCard } from '../components/PartCard';
 import { StatBar } from '../components/StatBar';
 import { Modal } from '../components/Modal';
+import { AssemblyPlanCard } from '../components/AssemblyPlanCard';
 import { useGameStore } from '../store/useGameStore';
 import { PART_TYPE_NAMES } from '../data/defaultConfig';
 import { generateId } from '../utils/helpers';
-import type { Part, PartType, Robot } from '../types';
+import type { Part, PartType, Robot, AssemblyPlan } from '../types';
 
 const SLOT_ORDER: PartType[] = ['head', 'body', 'arm', 'leg', 'core', 'tool'];
 
@@ -46,6 +50,8 @@ export function AssemblyPage() {
   const [planName, setPlanName] = useState('');
   const [showAssembleConfirm, setShowAssembleConfirm] = useState(false);
   const [robotName, setRobotName] = useState('');
+  const [showPlanPanel, setShowPlanPanel] = useState(true);
+  const [existingPlanToUpdate, setExistingPlanToUpdate] = useState<AssemblyPlan | null>(null);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -59,11 +65,15 @@ export function AssemblyPage() {
   const robots = useGameStore((s) => s.robots);
   const config = useGameStore((s) => s.config);
   const selectedParts = useGameStore((s) => s.selectedParts);
+  const assemblyPlans = useGameStore((s) => s.assemblyPlans);
   const setSelectedPart = useGameStore((s) => s.setSelectedPart);
   const clearSelectedParts = useGameStore((s) => s.clearSelectedParts);
   const calculateRobotStats = useGameStore((s) => s.calculateRobotStats);
   const addRobot = useGameStore((s) => s.addRobot);
   const addAssemblyPlan = useGameStore((s) => s.addAssemblyPlan);
+  const updateAssemblyPlan = useGameStore((s) => s.updateAssemblyPlan);
+  const loadAssemblyPlan = useGameStore((s) => s.loadAssemblyPlan);
+  const removeAssemblyPlan = useGameStore((s) => s.removeAssemblyPlan);
   const removePart = useGameStore((s) => s.removePart);
 
   const availableParts = useMemo(() => {
@@ -125,15 +135,37 @@ export function AssemblyPage() {
   const handleSavePlan = () => {
     if (!planName.trim()) return;
 
+    const trimmedName = planName.trim();
+    const existingPlan = assemblyPlans.find((p) => p.name === trimmedName);
+
+    if (existingPlan) {
+      setExistingPlanToUpdate(existingPlan);
+      return;
+    }
+
     addAssemblyPlan({
       id: generateId(),
-      name: planName.trim(),
+      name: trimmedName,
       parts: { ...selectedParts },
       savedAt: Date.now(),
     });
 
     setPlanName('');
     setShowSavePlan(false);
+  };
+
+  const handleOverwriteSave = () => {
+    if (!existingPlanToUpdate) return;
+
+    updateAssemblyPlan(existingPlanToUpdate.id, { ...selectedParts });
+
+    setExistingPlanToUpdate(null);
+    setPlanName('');
+    setShowSavePlan(false);
+  };
+
+  const handleLoadPlan = (planId: string) => {
+    loadAssemblyPlan(planId);
   };
 
   const handleAssemble = () => {
@@ -397,6 +429,57 @@ export function AssemblyPage() {
                 )}
               </div>
             </div>
+
+            <div className="card p-4 mt-6">
+              <button
+                onClick={() => setShowPlanPanel(!showPlanPanel)}
+                className="w-full flex items-center justify-between text-left"
+              >
+                <h3 className="font-display font-bold text-neon-purple flex items-center gap-2">
+                  <FileText className="w-5 h-5" />
+                  我的方案
+                  <span className="text-xs font-normal text-white/40">
+                    ({assemblyPlans.length})
+                  </span>
+                </h3>
+                {showPlanPanel ? (
+                  <ChevronUp className="w-5 h-5 text-white/50" />
+                ) : (
+                  <ChevronDown className="w-5 h-5 text-white/50" />
+                )}
+              </button>
+
+              <AnimatePresence>
+                {showPlanPanel && (
+                  <motion.div
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="mt-4 space-y-3 max-h-[400px] overflow-y-auto pr-2 scrollbar-thin">
+                      {assemblyPlans.length === 0 ? (
+                        <div className="text-center py-6 text-white/30">
+                          <FileText className="w-10 h-10 mx-auto mb-2 opacity-50" />
+                          <p className="text-sm">暂无保存的方案</p>
+                          <p className="text-xs mt-1">点击上方保存方案按钮创建</p>
+                        </div>
+                      ) : (
+                        assemblyPlans.map((plan) => (
+                          <AssemblyPlanCard
+                            key={plan.id}
+                            plan={plan}
+                            onLoad={() => handleLoadPlan(plan.id)}
+                            onDelete={() => removeAssemblyPlan(plan.id)}
+                            size="sm"
+                          />
+                        ))
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           </div>
         </div>
 
@@ -411,7 +494,10 @@ export function AssemblyPage() {
 
       <Modal
         isOpen={showSavePlan}
-        onClose={() => setShowSavePlan(false)}
+        onClose={() => {
+          setShowSavePlan(false);
+          setExistingPlanToUpdate(null);
+        }}
         title="保存组装方案"
         size="sm"
       >
@@ -428,7 +514,13 @@ export function AssemblyPage() {
             />
           </div>
           <div className="flex justify-end gap-3">
-            <button onClick={() => setShowSavePlan(false)} className="btn btn-ghost">
+            <button
+              onClick={() => {
+                setShowSavePlan(false);
+                setExistingPlanToUpdate(null);
+              }}
+              className="btn btn-ghost"
+            >
               取消
             </button>
             <button
@@ -437,6 +529,52 @@ export function AssemblyPage() {
               disabled={!planName.trim()}
             >
               保存
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={!!existingPlanToUpdate}
+        onClose={() => setExistingPlanToUpdate(null)}
+        title="方案已存在"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <p className="text-white/70">
+            已存在名为 <span className="text-neon-purple font-bold">"{existingPlanToUpdate?.name}"</span> 的方案。
+          </p>
+          <p className="text-sm text-white/50">
+            当前方案有 {existingPlanToUpdate?.versions.length} 个版本，
+            覆盖保存将保留旧版本并创建新版本。
+          </p>
+          <div className="grid grid-cols-2 gap-3 text-xs font-mono">
+            <div className="p-2 bg-background-tertiary rounded-lg text-center">
+              <p className="text-white/40 mb-1">当前版本</p>
+              <p className="text-neon-purple font-bold">
+                v{existingPlanToUpdate?.versions.length}
+              </p>
+            </div>
+            <div className="p-2 bg-background-tertiary rounded-lg text-center">
+              <p className="text-white/40 mb-1">新版本</p>
+              <p className="text-neon-green font-bold">
+                v{(existingPlanToUpdate?.versions.length || 0) + 1}
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-3 pt-2">
+            <button
+              onClick={() => setExistingPlanToUpdate(null)}
+              className="flex-1 btn btn-ghost"
+            >
+              取消
+            </button>
+            <button
+              onClick={handleOverwriteSave}
+              className="flex-1 btn btn-primary"
+            >
+              <Save className="w-4 h-4 inline mr-2" />
+              覆盖保存
             </button>
           </div>
         </div>
